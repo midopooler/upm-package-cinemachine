@@ -57,6 +57,13 @@ namespace Cinemachine
         [Tooltip("If camera is orthographic, screen edges will be confined to the volume.  "
             + "If not checked, then only the camera center will be confined")]
         public bool m_ConfineScreenEdges = true;
+        
+        [Tooltip("If camera is orthographic, screen edges will be confined to the volume.  "
+                 + "If not checked, then only the camera center will be confined")]
+        public bool m_ResizeCameraToFitConfiner = true;
+
+        public float m_DefaultCameraOrthoSize = 3;
+        
 
         /// <summary>How gradually to return the camera to the bounding volume if it goes beyond the borders</summary>
         [Tooltip("How gradually to return the camera to the bounding volume if it goes beyond the borders.  "
@@ -111,6 +118,13 @@ namespace Cinemachine
                 if (stage == CinemachineCore.Stage.Body)
                 {
                     Vector3 displacement;
+
+                    if (m_ResizeCameraToFitConfiner)
+                    {
+                        ResizeCameraToFitConfiner(vcam.Follow.position, ref state);
+                        
+                    }
+                    
                     if (m_ConfineScreenEdges && state.Lens.Orthographic)
                         displacement = ConfineScreenEdges(vcam, ref state);
                     else
@@ -237,28 +251,106 @@ namespace Cinemachine
 #endif
         }
 
+        private void ResizeCameraToFitConfiner(in Vector3 follow, ref CameraState state)
+        {
+            const float tolerance = 1e-5f;
+            
+            Quaternion rot = Quaternion.Inverse(state.CorrectedOrientation);
+            float heightFromCenter = state.Lens.OrthographicSize;
+            float widthFromCenter = heightFromCenter * state.Lens.Aspect;
+            Vector3 w = (rot * Vector3.right) * widthFromCenter;
+            Vector3 h = (rot * Vector3.up) * heightFromCenter;
+
+            float maxBoxWidthAroundFollow = 2 * widthFromCenter;
+            float maxBoxHeightAroundFollow = 2 * heightFromCenter;
+            {
+                Physics.Raycast(follow, Vector3.left, out var hitLeft, maxBoxWidthAroundFollow);
+                Physics.Raycast(follow, Vector3.right, out var hitRight, maxBoxWidthAroundFollow);
+                maxBoxWidthAroundFollow = Mathf.Max(hitLeft.distance, hitRight.distance);
+                Physics.Raycast(follow, Vector3.up, out var hitUp, maxBoxHeightAroundFollow);
+                Physics.Raycast(follow, Vector3.down, out var hitDown, maxBoxHeightAroundFollow);
+                maxBoxHeightAroundFollow = Mathf.Max(hitUp.distance, hitDown.distance);
+            }
+            
+            
+
+            // A        D
+            //  +------+
+            //  |      |
+            //  |      |
+            //  +------+
+            // B        C  
+            // h = |
+            // w = ---+
+            
+            Vector3 A = (follow + h) - w; // top left
+            Vector3 B = (follow - h) - w; // bottom left
+            Vector3 C = (follow - h) + w; // bottom right
+            Vector3 D = (follow + h) + w; // top right
+
+
+            // modify state.Lens.OrthographicSize
+            Debug.Log("widthFromCenter:"+widthFromCenter+"|heightFromCenter:"+heightFromCenter);
+            Debug.Log("widthFromCenterV:"+w+"|heightFromCenterV:"+h);
+
+            Vector3 dA = ConfinePoint(A);
+            Vector3 dB = ConfinePoint(B);
+            Vector3 dC = ConfinePoint(C);
+            Vector3 dD = ConfinePoint(D);
+
+            var horizontalShrinkLeft = Mathf.Max(dA.x, dB.x);
+            var horizontalShrinkRight = Mathf.Max(dD.x, dC.x);
+            var verticalShrinkTop = Mathf.Max(dA.y, dD.y);
+            var verticalShrinkBottom = Mathf.Max(dB.y, dC.y);
+            var horizontalShrink = Mathf.Abs(horizontalShrinkLeft) + Mathf.Abs(horizontalShrinkRight);
+//                Math.Abs(horizontalShrinkLeft) < tolerance || Math.Abs(horizontalShrinkRight) < tolerance
+//                    ? 1
+//                    : Mathf.Max(horizontalShrinkLeft, horizontalShrinkRight);
+            var verticalShrink = Mathf.Abs(verticalShrinkTop) + Mathf.Abs(verticalShrinkBottom);
+//                Math.Abs(verticalShrinkTop) < tolerance || Math.Abs(verticalShrinkBottom) < tolerance
+//                    ? 1
+//                    : Mathf.Max(verticalShrinkTop, verticalShrinkBottom);
+            
+
+//            float dw = Mathf.Max(Math.Max(dA.x, dD.x), Mathf.Max(dB.x, dC.x)); // TODO: only shrink when both are pushing toward center
+//            float dh = Mathf.Max(Math.Max(dA.y, dB.y), Mathf.Max(dC.y, dD.y)); // TODO: only shrink when both are pushing toward center
+
+            float wShrink = Math.Abs(widthFromCenter) < tolerance
+                ? 1
+                : Mathf.Clamp((widthFromCenter - horizontalShrink) / widthFromCenter, 0.01f, 1.0f);
+            float hShrink = Math.Abs(heightFromCenter) < tolerance
+                ? 1
+                : Mathf.Clamp((heightFromCenter - verticalShrink) / heightFromCenter, 0.01f, 1.0f);
+            float shrink = Mathf.Min(wShrink, hShrink);
+            Debug.Log("W shrink:" + shrink);
+
+            var lens = state.Lens;
+            lens.OrthographicSize = m_DefaultCameraOrthoSize * shrink;
+            state.Lens = lens;
+        }
+
         // Camera must be orthographic
         private Vector3 ConfineScreenEdges(CinemachineVirtualCameraBase vcam, ref CameraState state)
         {
             Quaternion rot = Quaternion.Inverse(state.CorrectedOrientation);
-            float dy = state.Lens.OrthographicSize;
-            float dx = dy * state.Lens.Aspect;
-            Vector3 vx = (rot * Vector3.right) * dx;
-            Vector3 vy = (rot * Vector3.up) * dy;
-
-            Vector3 displacement = Vector3.zero;
+            float heightFromCenter = state.Lens.OrthographicSize;
+            float widthFromCenter = heightFromCenter * state.Lens.Aspect;
+            Vector3 w = (rot * Vector3.right) * widthFromCenter;
+            Vector3 h = (rot * Vector3.up) * heightFromCenter;
+            
             Vector3 camPos = state.CorrectedPosition;
+            Vector3 displacement = Vector3.zero;
             Vector3 lastD = Vector3.zero;
             const int kMaxIter = 12;
             for (int i = 0; i < kMaxIter; ++i)
             {
-                Vector3 d = ConfinePoint((camPos - vy) - vx);
+                Vector3 d = ConfinePoint((camPos - h) - w);
                 if (d.AlmostZero())
-                    d = ConfinePoint((camPos + vy) + vx);
+                    d = ConfinePoint((camPos + h) + w);
                 if (d.AlmostZero())
-                    d = ConfinePoint((camPos - vy) + vx);
+                    d = ConfinePoint((camPos - h) + w);
                 if (d.AlmostZero())
-                    d = ConfinePoint((camPos + vy) - vx);
+                    d = ConfinePoint((camPos + h) - w);
                 if (d.AlmostZero())
                     break;
                 if ((d + lastD).AlmostZero())
