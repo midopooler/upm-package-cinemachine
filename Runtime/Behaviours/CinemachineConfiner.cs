@@ -251,79 +251,71 @@ namespace Cinemachine
 #endif
         }
 
-        private void ResizeCameraToFitConfiner(in Vector3 follow, ref CameraState state)
+        private void ResizeCameraToFitConfiner(in Vector3 follow, ref CameraState state, float tolerance = 1e-5f)
         {
-            const float tolerance = 1e-5f;
-            
-            Quaternion rot = Quaternion.Inverse(state.CorrectedOrientation);
             float heightFromCenter = state.Lens.OrthographicSize;
             float widthFromCenter = heightFromCenter * state.Lens.Aspect;
-            Vector3 w = (rot * Vector3.right) * widthFromCenter;
-            Vector3 h = (rot * Vector3.up) * heightFromCenter;
 
-            float maxBoxWidthAroundFollow = 2 * widthFromCenter;
-            float maxBoxHeightAroundFollow = 2 * heightFromCenter;
+            if (Math.Abs(heightFromCenter) < tolerance || Math.Abs(widthFromCenter) < tolerance)
             {
-                Physics.Raycast(follow, Vector3.left, out var hitLeft, maxBoxWidthAroundFollow);
-                Physics.Raycast(follow, Vector3.right, out var hitRight, maxBoxWidthAroundFollow);
-                maxBoxWidthAroundFollow = Mathf.Max(hitLeft.distance, hitRight.distance);
-                Physics.Raycast(follow, Vector3.up, out var hitUp, maxBoxHeightAroundFollow);
-                Physics.Raycast(follow, Vector3.down, out var hitDown, maxBoxHeightAroundFollow);
-                maxBoxHeightAroundFollow = Mathf.Max(hitUp.distance, hitDown.distance);
+                return;
             }
             
+            float maxBoxWidth = 2 * widthFromCenter;
+            float maxBoxHeight = 2 * heightFromCenter;
+            float maxBoxDiagonal = Mathf.Sqrt(maxBoxWidth * maxBoxWidth + maxBoxHeight * maxBoxHeight);
+            float maxBoxWidthAroundFollow, maxBoxHeightAroundFollow, maxBoxDiagonalAroundFollow;
+            {
+                int layer = LayerMask.GetMask("CinemachineCamCollider");
+                Vector2 follow2D = new Vector2(follow.x, follow.y);
+                {
+                    RaycastHit2D hitLeft = Physics2D.Raycast(follow2D, Vector2.left, maxBoxWidth, layer);
+                    RaycastHit2D hitRight = Physics2D.Raycast(follow2D, Vector2.right, maxBoxWidth, layer);
+                    maxBoxWidthAroundFollow = Mathf.Clamp(
+                        (hitLeft.collider == null ? maxBoxWidth : hitLeft.distance) +
+                        (hitRight.collider == null ? maxBoxWidth : hitRight.distance),
+                        0.01f, maxBoxWidth);
+                }
+                {
+                    RaycastHit2D hitTop = Physics2D.Raycast(follow2D, Vector2.up, maxBoxHeight, layer);
+                    RaycastHit2D hitBottom = Physics2D.Raycast(follow2D, Vector2.down, maxBoxHeight, layer);
+                    maxBoxHeightAroundFollow = Mathf.Clamp(
+                        (hitTop.collider == null ? maxBoxHeight : hitTop.distance) +
+                        (hitBottom.collider == null ? maxBoxHeight : hitBottom.distance),
+                        0.01f, maxBoxHeight);
+                }
+                float maxBoxDiagonalAroundFollow1;
+                {
+                    Vector2 topRight = maxBoxWidth * Vector2.right + maxBoxHeight * Vector2.up;
+                    Vector2 bottomLeft = maxBoxWidth * Vector2.left + maxBoxHeight * Vector2.down;
+                    RaycastHit2D hitTopRight =
+                        Physics2D.Raycast(follow2D, topRight.normalized, maxBoxDiagonal, layer);
+                    RaycastHit2D hitBottomLeft =
+                        Physics2D.Raycast(follow2D, bottomLeft.normalized, maxBoxDiagonal, layer);
+                    maxBoxDiagonalAroundFollow1 = Mathf.Clamp(
+                        (hitTopRight.collider == null ? maxBoxDiagonal : hitTopRight.distance) +
+                        (hitBottomLeft.collider == null ? maxBoxDiagonal : hitBottomLeft.distance),
+                        0.01f, maxBoxDiagonal);
+                }
+                float maxBoxDiagonalAroundFollow2;
+                {
+                    Vector2 topLeft = maxBoxWidth * Vector2.left + maxBoxHeight * Vector2.up;
+                    Vector2 bottomRight = maxBoxWidth * Vector2.right + maxBoxHeight * Vector2.down;
+                    RaycastHit2D hitTopLeft =
+                        Physics2D.Raycast(follow2D, topLeft.normalized, maxBoxDiagonal, layer);
+                    RaycastHit2D hitBottomRight =
+                        Physics2D.Raycast(follow2D, bottomRight.normalized, maxBoxDiagonal, layer);
+                    maxBoxDiagonalAroundFollow2 = Mathf.Clamp(
+                        (hitTopLeft.collider == null ? maxBoxDiagonal : hitTopLeft.distance) +
+                        (hitBottomRight.collider == null ? maxBoxDiagonal : hitBottomRight.distance),
+                        0.01f, maxBoxDiagonal);
+                }
+                maxBoxDiagonalAroundFollow = Mathf.Min(maxBoxDiagonalAroundFollow1, maxBoxDiagonalAroundFollow2);
+            }
+            float shrink = Mathf.Min(maxBoxDiagonalAroundFollow / maxBoxDiagonal, Mathf.Min(
+                                     maxBoxWidthAroundFollow    / maxBoxWidth,
+                                     maxBoxHeightAroundFollow   / maxBoxHeight));
             
-
-            // A        D
-            //  +------+
-            //  |      |
-            //  |      |
-            //  +------+
-            // B        C  
-            // h = |
-            // w = ---+
-            
-            Vector3 A = (follow + h) - w; // top left
-            Vector3 B = (follow - h) - w; // bottom left
-            Vector3 C = (follow - h) + w; // bottom right
-            Vector3 D = (follow + h) + w; // top right
-
-
-            // modify state.Lens.OrthographicSize
-            Debug.Log("widthFromCenter:"+widthFromCenter+"|heightFromCenter:"+heightFromCenter);
-            Debug.Log("widthFromCenterV:"+w+"|heightFromCenterV:"+h);
-
-            Vector3 dA = ConfinePoint(A);
-            Vector3 dB = ConfinePoint(B);
-            Vector3 dC = ConfinePoint(C);
-            Vector3 dD = ConfinePoint(D);
-
-            var horizontalShrinkLeft = Mathf.Max(dA.x, dB.x);
-            var horizontalShrinkRight = Mathf.Max(dD.x, dC.x);
-            var verticalShrinkTop = Mathf.Max(dA.y, dD.y);
-            var verticalShrinkBottom = Mathf.Max(dB.y, dC.y);
-            var horizontalShrink = Mathf.Abs(horizontalShrinkLeft) + Mathf.Abs(horizontalShrinkRight);
-//                Math.Abs(horizontalShrinkLeft) < tolerance || Math.Abs(horizontalShrinkRight) < tolerance
-//                    ? 1
-//                    : Mathf.Max(horizontalShrinkLeft, horizontalShrinkRight);
-            var verticalShrink = Mathf.Abs(verticalShrinkTop) + Mathf.Abs(verticalShrinkBottom);
-//                Math.Abs(verticalShrinkTop) < tolerance || Math.Abs(verticalShrinkBottom) < tolerance
-//                    ? 1
-//                    : Mathf.Max(verticalShrinkTop, verticalShrinkBottom);
-            
-
-//            float dw = Mathf.Max(Math.Max(dA.x, dD.x), Mathf.Max(dB.x, dC.x)); // TODO: only shrink when both are pushing toward center
-//            float dh = Mathf.Max(Math.Max(dA.y, dB.y), Mathf.Max(dC.y, dD.y)); // TODO: only shrink when both are pushing toward center
-
-            float wShrink = Math.Abs(widthFromCenter) < tolerance
-                ? 1
-                : Mathf.Clamp((widthFromCenter - horizontalShrink) / widthFromCenter, 0.01f, 1.0f);
-            float hShrink = Math.Abs(heightFromCenter) < tolerance
-                ? 1
-                : Mathf.Clamp((heightFromCenter - verticalShrink) / heightFromCenter, 0.01f, 1.0f);
-            float shrink = Mathf.Min(wShrink, hShrink);
-            Debug.Log("W shrink:" + shrink);
-
             var lens = state.Lens;
             lens.OrthographicSize = m_DefaultCameraOrthoSize * shrink;
             state.Lens = lens;
