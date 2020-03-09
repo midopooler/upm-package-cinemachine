@@ -121,7 +121,7 @@ namespace Cinemachine
 
                     if (m_ResizeCameraToFitConfiner)
                     {
-                        ResizeCameraToFitConfiner(vcam.Follow.position, ref state);
+                        ResizeCameraToFitConfiner(vcam.Follow.position, deltaTime, ref state);
                         
                     }
                     
@@ -251,7 +251,8 @@ namespace Cinemachine
 #endif
         }
 
-        private void ResizeCameraToFitConfiner(in Vector3 follow, ref CameraState state, float tolerance = 1e-5f)
+        private float prevShrink;
+        private void ResizeCameraToFitConfiner(in Vector3 follow, in float deltaTime, ref CameraState state, float tolerance = 1e-5f)
         {
             float heightFromCenter = state.Lens.OrthographicSize;
             float widthFromCenter = heightFromCenter * state.Lens.Aspect;
@@ -315,6 +316,9 @@ namespace Cinemachine
             float shrink = Mathf.Min(maxBoxDiagonalAroundFollow / maxBoxDiagonal, Mathf.Min(
                                      maxBoxWidthAroundFollow    / maxBoxWidth,
                                      maxBoxHeightAroundFollow   / maxBoxHeight));
+
+            shrink = Mathf.Lerp(prevShrink, shrink, Math.Abs(m_Damping) < tolerance ? 1 : deltaTime * 1.0f / m_Damping);
+            prevShrink = shrink;
             
             var lens = state.Lens;
             lens.OrthographicSize = m_DefaultCameraOrthoSize * shrink;
