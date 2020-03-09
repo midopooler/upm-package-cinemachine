@@ -251,7 +251,7 @@ namespace Cinemachine
 #endif
         }
 
-        private float prevShrink;
+        private float prevShrink = 1;
         private void ResizeCameraToFitConfiner(in Vector3 follow, in float deltaTime, ref CameraState state, float tolerance = 1e-5f)
         {
             float heightFromCenter = state.Lens.OrthographicSize;
