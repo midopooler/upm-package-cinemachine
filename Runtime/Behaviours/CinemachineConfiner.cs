@@ -59,9 +59,14 @@ namespace Cinemachine
         public bool m_ConfineScreenEdges = true;
         
         [Tooltip("If confiner area is smaller than the camera window, the camera will be centered.")]
-        public bool m_CenterCameraInConfiner = true;
+        public bool m_CenterCamera = true;
+        
+        [Tooltip("If confiner area is smaller than the camera window, the camera will be centered " +
+                 "and resized to fit the available space.")]
+        public bool m_ResizeCamera = true;
 
-        public float m_DefaultCameraOrthoSize = 3;
+
+        private float defaultCameraOrthoSize = -1;
         
 
         /// <summary>How gradually to return the camera to the bounding volume if it goes beyond the borders</summary>
@@ -140,23 +145,32 @@ namespace Cinemachine
                     (!extra.applyAfterAim && stage == CinemachineCore.Stage.Body))
                 {
                     Vector3 displacement;
-                    
-                    if (m_CenterCameraInConfiner)
+                    if (m_ConfineScreenEdges && state.Lens.Orthographic)
                     {
-                        float shrink = ResizeCameraToFitConfiner(vcam.Follow.position, deltaTime, ref state);
-                        displacement = ConfineScreenEdges(vcam, ref state, shrink);
-                        
-                        // shrink camera window
-//                        var lens = state.Lens;
-//                        lens.OrthographicSize = m_DefaultCameraOrthoSize * shrink;
-//                        state.Lens = lens;
+                        if (m_CenterCamera)
+                        {
+                            float shrink = ShrinkCameraToFitConfiner(vcam.Follow.position, deltaTime, state);
+                            displacement = ConfineScreenEdges(vcam, ref state, shrink);
+
+                            if (m_ResizeCamera)
+                            {
+                                var lens = state.Lens;
+                                if (defaultCameraOrthoSize <= 0)
+                                {
+                                    defaultCameraOrthoSize = lens.OrthographicSize;
+                                }
+                                lens.OrthographicSize = defaultCameraOrthoSize * shrink;
+                                state.Lens = lens;
+                            }
+                        }
+                        else
+                        {
+                            displacement = ConfineScreenEdges(vcam, ref state);
+                        }
                     }
                     else
                     {
-                        if (m_ConfineScreenEdges && state.Lens.Orthographic)
-                            displacement = ConfineScreenEdges(vcam, ref state);
-                        else
-                            displacement = ConfinePoint(state.CorrectedPosition);
+                        displacement = ConfinePoint(state.CorrectedPosition);
                     }
                     
                     if (m_Damping > 0 && deltaTime >= 0 && VirtualCamera.PreviousStateIsValid)
@@ -280,7 +294,7 @@ namespace Cinemachine
         }
 
         private float prevShrink = 1;
-        private float ResizeCameraToFitConfiner(in Vector3 follow, in float deltaTime, ref CameraState state, float tolerance = 1e-5f)
+        private float ShrinkCameraToFitConfiner(in Vector3 follow, in float deltaTime, in CameraState state, float tolerance = 1e-5f)
         {
             float heightFromCenter = state.Lens.OrthographicSize;
             float widthFromCenter = heightFromCenter * state.Lens.Aspect;
@@ -290,8 +304,8 @@ namespace Cinemachine
                 return 1;
             }
             
-            float maxBoxWidth = 2 * widthFromCenter;
-            float maxBoxHeight = 2 * heightFromCenter;
+            float maxBoxWidth = 2*widthFromCenter;
+            float maxBoxHeight = 2*heightFromCenter;
             float maxBoxDiagonal = Mathf.Sqrt(maxBoxWidth * maxBoxWidth + maxBoxHeight * maxBoxHeight);
             
             float maxBoxWidthAroundFollow, maxBoxHeightAroundFollow, maxBoxDiagonalAroundFollow;
