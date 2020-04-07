@@ -58,6 +58,10 @@ namespace Cinemachine
         [Tooltip("If checked, movement along the Y axis will be ignored for lookahead calculations")]
         public bool m_LookaheadIgnoreY;
 
+        /// <summary>If checked, lookahead will reset when target stops moving</summary>
+        [Tooltip("If checked, lookahead will reset when target stops moving")]
+        public bool m_LookaheadResetWhenStill;
+
         /// <summary>How aggressively the camera tries to maintain the offset in the X-axis.
         /// Small numbers are more responsive, rapidly translating the camera to keep the target's
         /// x-axis offset.  Larger numbers give a more heavy slowly responding camera.
@@ -316,6 +320,7 @@ namespace Cinemachine
         public override bool BodyAppliesAfterAim { get { return true; } }
 
         const float kMinimumCameraDistance = 0.01f;
+        const float kMinimumGroupSize = 0.01f;
 
         /// <summary>State information for damping</summary>
         Vector3 m_PreviousCameraPosition = Vector3.zero;
@@ -339,6 +344,17 @@ namespace Cinemachine
             }
         }
 
+        /// <summary>
+        /// Force the virtual camera to assume a given position and orientation
+        /// </summary>
+        /// <param name="pos">Worldspace pposition to take</param>
+        /// <param name="rot">Worldspace orientation to take</param>
+        public override void ForceCameraPosition(Vector3 pos, Quaternion rot)
+        {
+            base.ForceCameraPosition(pos, rot);
+            m_PreviousCameraPosition = pos;
+        }
+        
         /// <summary>Notification that this virtual camera is going live.
         /// Base class implementation does nothing.</summary>
         /// <param name="fromCam">The camera being deactivated.  May be null.</param>
@@ -423,8 +439,7 @@ namespace Cinemachine
 
             // Compute group bounds and adjust follow target for group framing
             ICinemachineTargetGroup group = AbstractFollowTargetGroup;
-            bool isGroupFraming = group != null && Math.Abs(group.Sphere.radius) > 1e-5f &&
-                                  m_GroupFramingMode != FramingMode.None;
+            bool isGroupFraming = group != null && m_GroupFramingMode != FramingMode.None;
             if (isGroupFraming)
                 followTargetPosition = ComputeGroupBounds(group, ref curState);
 
@@ -432,6 +447,7 @@ namespace Cinemachine
             if (m_LookaheadTime > Epsilon)
             {
                 m_Predictor.Smoothing = m_LookaheadSmoothing;
+                m_Predictor.Recenter = m_LookaheadResetWhenStill;
                 m_Predictor.AddPosition(followTargetPosition, deltaTime, m_LookaheadTime);
                 var delta = m_Predictor.PredictPositionDelta(m_LookaheadTime);
                 if (m_LookaheadIgnoreY)
@@ -453,6 +469,7 @@ namespace Cinemachine
             float targetDistance = m_CameraDistance;
             bool isOrthographic = lens.Orthographic;
             float targetHeight = isGroupFraming ? GetTargetHeight(LastBounds.size / m_GroupFramingSize) : 0;
+            targetHeight = Mathf.Max(targetHeight, kMinimumGroupSize);
             if (!isOrthographic && isGroupFraming)
             {
                 // Adjust height for perspective - we want the height at the near surface

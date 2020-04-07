@@ -46,6 +46,10 @@ namespace Cinemachine
         [Tooltip("If checked, movement along the Y axis will be ignored for lookahead calculations")]
         public bool m_LookaheadIgnoreY;
 
+        /// <summary>If checked, lookahead will reset when target stops moving</summary>
+        [Tooltip("If checked, lookahead will reset when target stops moving")]
+        public bool m_LookaheadResetWhenStill;
+
         /// <summary>How aggressively the camera tries to follow the target in the screen-horizontal direction.
         /// Small numbers are more responsive, rapidly orienting the camera to keep the target in
         /// the dead zone. Larger numbers give a more heavy slowly responding camera.
@@ -136,6 +140,7 @@ namespace Cinemachine
             else
             {
                 m_Predictor.Smoothing = m_LookaheadSmoothing;
+                m_Predictor.Recenter = m_LookaheadResetWhenStill;
                 m_Predictor.AddPosition(pos, VirtualCamera.PreviousStateIsValid ? deltaTime : -1, m_LookaheadTime);
                 var delta = m_Predictor.PredictPositionDelta(m_LookaheadTime);
                 if (m_LookaheadIgnoreY)
@@ -168,6 +173,18 @@ namespace Cinemachine
             }
         }
 
+        /// <summary>
+        /// Force the virtual camera to assume a given position and orientation
+        /// </summary>
+        /// <param name="pos">Worldspace pposition to take</param>
+        /// <param name="rot">Worldspace orientation to take</param>
+        public override void ForceCameraPosition(Vector3 pos, Quaternion rot)
+        {
+            base.ForceCameraPosition(pos, rot);
+            m_CameraPosPrevFrame = pos;
+            m_CameraOrientationPrevFrame = rot;
+        }
+        
         public override void PrePipelineMutateCameraState(ref CameraState curState, float deltaTime)
         {
             if (IsValid && curState.HasLookAt)
@@ -214,6 +231,8 @@ namespace Cinemachine
             if (deltaTime < 0 || !VirtualCamera.PreviousStateIsValid)
             {
                 // No damping, just snap to central bounds, skipping the soft zone
+                rigOrientation = Quaternion.LookRotation(
+                    rigOrientation * Vector3.forward, curState.ReferenceUp);
                 Rect rect = mCache.mFovSoftGuideRect;
                 if (m_CenterOnActivate)
                     rect = new Rect(rect.center, Vector2.zero); // Force to center
