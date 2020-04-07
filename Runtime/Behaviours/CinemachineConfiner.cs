@@ -58,9 +58,8 @@ namespace Cinemachine
             + "If not checked, then only the camera center will be confined")]
         public bool m_ConfineScreenEdges = true;
         
-        [Tooltip("If camera is orthographic, screen edges will be confined to the volume.  "
-                 + "If not checked, then only the camera center will be confined")]
-        public bool m_ResizeCameraToFitConfiner = true;
+        [Tooltip("If confiner area is smaller than the camera window, the camera will be centered.")]
+        public bool m_CenterCameraInConfiner = true;
 
         public float m_DefaultCameraOrthoSize = 3;
         
@@ -141,17 +140,25 @@ namespace Cinemachine
                     (!extra.applyAfterAim && stage == CinemachineCore.Stage.Body))
                 {
                     Vector3 displacement;
-
-                    if (m_ResizeCameraToFitConfiner)
+                    
+                    if (m_CenterCameraInConfiner)
                     {
-                        ResizeCameraToFitConfiner(vcam.Follow.position, deltaTime, ref state);
+                        float shrink = ResizeCameraToFitConfiner(vcam.Follow.position, deltaTime, ref state);
+                        displacement = ConfineScreenEdges(vcam, ref state, shrink);
+                        
+                        // shrink camera window
+//                        var lens = state.Lens;
+//                        lens.OrthographicSize = m_DefaultCameraOrthoSize * shrink;
+//                        state.Lens = lens;
+                    }
+                    else
+                    {
+                        if (m_ConfineScreenEdges && state.Lens.Orthographic)
+                            displacement = ConfineScreenEdges(vcam, ref state);
+                        else
+                            displacement = ConfinePoint(state.CorrectedPosition);
                     }
                     
-                    if (m_ConfineScreenEdges && state.Lens.Orthographic)
-                        displacement = ConfineScreenEdges(vcam, ref state);
-                    else
-                        displacement = ConfinePoint(state.CorrectedPosition);
-
                     if (m_Damping > 0 && deltaTime >= 0 && VirtualCamera.PreviousStateIsValid)
                     {
                         Vector3 delta = displacement - extra.m_previousDisplacement;
@@ -273,14 +280,14 @@ namespace Cinemachine
         }
 
         private float prevShrink = 1;
-        private void ResizeCameraToFitConfiner(in Vector3 follow, in float deltaTime, ref CameraState state, float tolerance = 1e-5f)
+        private float ResizeCameraToFitConfiner(in Vector3 follow, in float deltaTime, ref CameraState state, float tolerance = 1e-5f)
         {
             float heightFromCenter = state.Lens.OrthographicSize;
             float widthFromCenter = heightFromCenter * state.Lens.Aspect;
 
             if (Math.Abs(heightFromCenter) < tolerance || Math.Abs(widthFromCenter) < tolerance)
             {
-                return;
+                return 1;
             }
             
             float maxBoxWidth = 2 * widthFromCenter;
@@ -342,20 +349,17 @@ namespace Cinemachine
 
             shrink = Mathf.Lerp(prevShrink, shrink, Math.Abs(m_Damping) < tolerance ? 1 : deltaTime * 1.0f / m_Damping);
             prevShrink = shrink;
-            
-            var lens = state.Lens;
-            lens.OrthographicSize = m_DefaultCameraOrthoSize * shrink;
-            state.Lens = lens;
+            return shrink;
         }
 
         // Camera must be orthographic
-        private Vector3 ConfineScreenEdges(CinemachineVirtualCameraBase vcam, ref CameraState state)
+        private Vector3 ConfineScreenEdges(CinemachineVirtualCameraBase vcam, ref CameraState state, float shrink = 1.0f)
         {
             Quaternion rot = Quaternion.Inverse(state.CorrectedOrientation);
             float heightFromCenter = state.Lens.OrthographicSize;
             float widthFromCenter = heightFromCenter * state.Lens.Aspect;
-            Vector3 w = (rot * Vector3.right) * widthFromCenter;
-            Vector3 h = (rot * Vector3.up) * heightFromCenter;
+            Vector3 w = (rot * Vector3.right) * widthFromCenter * shrink;
+            Vector3 h = (rot * Vector3.up) * heightFromCenter * shrink;
             
             Vector3 camPos = state.CorrectedPosition;
             Vector3 displacement = Vector3.zero;
