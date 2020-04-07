@@ -122,7 +122,6 @@ namespace Cinemachine
                     if (m_ResizeCameraToFitConfiner)
                     {
                         ResizeCameraToFitConfiner(vcam.Follow.position, deltaTime, ref state);
-                        
                     }
                     
                     if (m_ConfineScreenEdges && state.Lens.Orthographic)
@@ -265,6 +264,7 @@ namespace Cinemachine
             float maxBoxWidth = 2 * widthFromCenter;
             float maxBoxHeight = 2 * heightFromCenter;
             float maxBoxDiagonal = Mathf.Sqrt(maxBoxWidth * maxBoxWidth + maxBoxHeight * maxBoxHeight);
+            
             float maxBoxWidthAroundFollow, maxBoxHeightAroundFollow, maxBoxDiagonalAroundFollow;
             {
                 int layer = LayerMask.GetMask("CinemachineCamCollider");
@@ -316,6 +316,7 @@ namespace Cinemachine
             float shrink = Mathf.Min(maxBoxDiagonalAroundFollow / maxBoxDiagonal, Mathf.Min(
                                      maxBoxWidthAroundFollow    / maxBoxWidth,
                                      maxBoxHeightAroundFollow   / maxBoxHeight));
+            Debug.Log("shrink:"+shrink);
 
             shrink = Mathf.Lerp(prevShrink, shrink, Math.Abs(m_Damping) < tolerance ? 1 : deltaTime * 1.0f / m_Damping);
             prevShrink = shrink;
