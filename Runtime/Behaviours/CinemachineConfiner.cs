@@ -307,8 +307,11 @@ namespace Cinemachine
             float maxBoxWidth = 2*widthFromCenter;
             float maxBoxHeight = 2*heightFromCenter;
             float maxBoxDiagonal = Mathf.Sqrt(maxBoxWidth * maxBoxWidth + maxBoxHeight * maxBoxHeight);
-            
+
             float maxBoxWidthAroundFollow, maxBoxHeightAroundFollow, maxBoxDiagonalAroundFollow;
+            float maxWidth = maxBoxWidth;
+            float maxHeight = maxBoxHeight;
+            float shrink = 1f;
             {
                 int layer = LayerMask.GetMask("CinemachineCamCollider");
                 Vector2 follow2D = new Vector2(follow.x, follow.y);
@@ -319,17 +322,13 @@ namespace Cinemachine
                         (hitLeft.collider == null ? maxBoxWidth : hitLeft.distance) +
                         (hitRight.collider == null ? maxBoxWidth : hitRight.distance),
                         0.01f, maxBoxWidth);
-                }
-                {
                     RaycastHit2D hitTop = Physics2D.Raycast(follow2D, Vector2.up, maxBoxHeight, layer);
                     RaycastHit2D hitBottom = Physics2D.Raycast(follow2D, Vector2.down, maxBoxHeight, layer);
                     maxBoxHeightAroundFollow = Mathf.Clamp(
                         (hitTop.collider == null ? maxBoxHeight : hitTop.distance) +
                         (hitBottom.collider == null ? maxBoxHeight : hitBottom.distance),
                         0.01f, maxBoxHeight);
-                }
-                float maxBoxDiagonalAroundFollow1;
-                {
+                    float maxBoxDiagonalAroundFollow1;
                     Vector2 topRight = maxBoxWidth * Vector2.right + maxBoxHeight * Vector2.up;
                     Vector2 bottomLeft = maxBoxWidth * Vector2.left + maxBoxHeight * Vector2.down;
                     RaycastHit2D hitTopRight =
@@ -340,9 +339,7 @@ namespace Cinemachine
                         (hitTopRight.collider == null ? maxBoxDiagonal : hitTopRight.distance) +
                         (hitBottomLeft.collider == null ? maxBoxDiagonal : hitBottomLeft.distance),
                         0.01f, maxBoxDiagonal);
-                }
-                float maxBoxDiagonalAroundFollow2;
-                {
+                    float maxBoxDiagonalAroundFollow2;
                     Vector2 topLeft = maxBoxWidth * Vector2.left + maxBoxHeight * Vector2.up;
                     Vector2 bottomRight = maxBoxWidth * Vector2.right + maxBoxHeight * Vector2.down;
                     RaycastHit2D hitTopLeft =
@@ -353,12 +350,59 @@ namespace Cinemachine
                         (hitTopLeft.collider == null ? maxBoxDiagonal : hitTopLeft.distance) +
                         (hitBottomRight.collider == null ? maxBoxDiagonal : hitBottomRight.distance),
                         0.01f, maxBoxDiagonal);
+                    maxBoxDiagonalAroundFollow = Mathf.Min(maxBoxDiagonalAroundFollow1, maxBoxDiagonalAroundFollow2);
+
+                    shrink = Mathf.Min(maxBoxDiagonalAroundFollow / maxBoxDiagonal, Mathf.Min(
+                        maxBoxWidthAroundFollow / maxBoxWidth, maxBoxHeightAroundFollow / maxBoxHeight));
+                    
+                    if (shrink <= 0.95f)
+                    {
+                        RaycastHit2D[] leftHits = {hitTopLeft, hitLeft, hitBottomLeft};
+                        RaycastHit2D[] rightHits = {hitTopRight, hitRight, hitBottomRight};
+                        for (int l = 0; l < leftHits.Length; ++l)
+                        {
+                            if (leftHits[l].collider == null)
+                            {
+                                continue;
+                            }
+
+                            for (int r = 0; r < rightHits.Length; ++r)
+                            {
+                                if (rightHits[r].collider == null)
+                                {
+                                    continue;
+                                }
+
+                                maxWidth = Mathf.Min((leftHits[l].point - rightHits[r].point).magnitude);
+                            }
+                        }
+                    }
+                    if (shrink <= 0.95f)
+                    {
+                        RaycastHit2D[] topHits = {hitTopLeft, hitTop, hitTopRight};
+                        RaycastHit2D[] bottomHits = {hitBottomLeft, hitBottom, hitBottomRight};
+                        for (int t = 0; t < topHits.Length; ++t)
+                        {
+                            if (topHits[t].collider == null)
+                            {
+                                continue;
+                            }
+
+                            for (int b = 0; b < bottomHits.Length; ++b)
+                            {
+                                if (bottomHits[b].collider == null)
+                                {
+                                    continue;
+                                }
+
+                                maxHeight = Mathf.Min((topHits[t].point - bottomHits[b].point).magnitude);
+                            }
+                        }
+                    }
                 }
-                maxBoxDiagonalAroundFollow = Mathf.Min(maxBoxDiagonalAroundFollow1, maxBoxDiagonalAroundFollow2);
             }
-            float shrink = Mathf.Min(maxBoxDiagonalAroundFollow / maxBoxDiagonal, Mathf.Min(
-                                     maxBoxWidthAroundFollow    / maxBoxWidth,
-                                     maxBoxHeightAroundFollow   / maxBoxHeight));
+            
+            shrink = Mathf.Min(shrink, Mathf.Min(maxHeight / maxBoxHeight), maxWidth / maxBoxWidth);
             Debug.Log("shrink:"+shrink);
 
             shrink = Mathf.Lerp(prevShrink, shrink, Math.Abs(m_Damping) < tolerance ? 1 : deltaTime * 1.0f / m_Damping);
