@@ -354,10 +354,6 @@ namespace Cinemachine
                 0.01f, maxBoxDiagonal);
             var maxBoxDiagonalAroundFollow = Mathf.Min(maxBoxDiagonalAroundFollow1, maxBoxDiagonalAroundFollow2);
 
-            Debug.Log("diagonal=" + maxBoxDiagonalAroundFollow / maxBoxDiagonal +
-                      "|width=" + maxBoxWidthAroundFollow / maxBoxWidth +
-                      "|height=" + maxBoxHeightAroundFollow / maxBoxHeight);
-            
             return Mathf.Min(maxBoxDiagonalAroundFollow / maxBoxDiagonal, Mathf.Min(
                 maxBoxWidthAroundFollow / maxBoxWidth, maxBoxHeightAroundFollow / maxBoxHeight));
         }
